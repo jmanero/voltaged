@@ -1,129 +1,97 @@
-#include <v8.h>
-#include <node.h>
-#include <cstdint>
-#include <stdlib.h>
-#include <errno.h>
+#include <node_buffer.h>
+#include "spi.h"
 
-#include "device.h"
-
-using namespace std;
-using namespace node;
-using namespace v8;
-
-struct SPIBaton {
-  uv_work_t request;
-  Persistent<Function> callback;
-
-  int32_t error_code;
-  string error_message;
-
-  SPIDevice *device;
-  uint8_t *data;
-  uint32_t length;
-};
-
-void SPIOpenWorker(uv_work_t* req) {
+void SPIInterface::Result(uv_work_t* req) {
+  HandleScope scope;
   SPIBaton* baton = static_cast<SPIBaton*>(req->data);
-  // ...
-}
 
-void SPITransferWorker(uv_work_t* req) {
-  SPIBaton* baton = static_cast<SPIBaton*>(req->data);
-  // ...
-}
+  Handle<Value> argv[2];
+  if(baton->error_code) { // Error
+    argv[0] = ;
+    argv[1] = Undefined();
+  } else {
 
-void SPICloseWorker(uv_work_t* req) {
-  SPIBaton* baton = static_cast<SPIBaton*>(req->data);
-  // ...
-}
-
-void SPIResult(uv_work_t* req) {
-    HandleScope scope;
-
-    SSPIBaton* baton = static_cast<SPIBaton*>(req->data);
-    delete req;
-
-    Handle<Value> argv[2];
-
-    // XXX: Error handling
-    argv[0] = Undefined();
-    argv[1] = Undefined(); // TODO Create Buffer
-
-    TryCatch try_catch;
-    request->callback->Call(Context::GetCurrent()->Global(), 2, argv);
-    if (try_catch.HasCaught()) FatalException(try_catch);
-
-    request->callback.Dispose();
-    delete request;
-}
-
-namespace SPIInterface {
-  Handle<Value> Open(const Arguments& args) {
-    HandleScope scope;
-
-    return scope.Close(Undefined());
   }
 
-  Handle<Value> Transfer(const Arguments& args) {
-    HandleScope scope;
+  // TODO Create Buffer
 
-    if (!args[0]->IsBuffer()) return ThrowException(Exception::TypeError(
-      String::New("First argumernt must be a Buffer")));
-    // TODO Convert buffer to byte-array
+  TryCatch try_catch;
+  baton->callback->Call(Context::GetCurrent()->Global(), 2, argv);
+  if (try_catch.HasCaught()) FatalException(try_catch);
 
-    if (!args[1]->IsFunction()) return ThrowException(Exception::TypeError(
-      String::New("Second argumernt must be a callback function")));
-    Local<Function> callback = Local<Function>::Cast(args[1]);
+  baton->callback.Dispose();
 
-    uv_work_t request;
-    SPIBaton* baton = new SPIBaton();
-    baton->callback = Persistent<Function>::New(callback);
-    baton->request.data = baton;
+  // FREE THE MALLOCS!
+  if(baton->payload) delete baton->payload;
+  delete baton;
+  delete req;
+}
 
-    baton->device = NULL; // TODO Get handle
-    baton->data = NULL;
-    baton->length = 0;
+Handle<Value> SPIInterface::Open(const Arguments& args) {
+  HandleScope scope;
 
+  uv_queue_work(uv_default_loop(), &request, SPIDevice::open, SPIInterface::Result);
+  return scope.Close(Undefined());
+}
 
-    uv_queue_work(uv_default_loop(), &baton->request, SPITransferWorker, SPIResult);
-    return scope.Close(Undefined());
-  }
+Handle<Value> SPIInterface::Transfer(const Arguments& args) {
+  HandleScope scope;
 
-  Handle<Value> Close(const Arguments& args) {
-    HandleScope scope;
+  if (!args[0]->IsInteger()) return ThrowException(Exception::TypeError(
+    String::New("First argumernt must be an Integer filehandle")));
+  if (!Buffer::HasInstance(args[1])) return ThrowException(Exception::TypeError(
+    String::New("Second argumernt must be a Buffer")));
+  Local<Object> data = args[1]->ToObject()
 
-    return scope.Close(Undefined());
-  }
+  if (!args[2]->IsFunction()) return ThrowException(Exception::TypeError(
+    String::New("Third argumernt must be a callback function")));
+  Local<Function> callback = Local<Function>::Cast(args[2]);
 
-  Handle<Object> New(const Arguments& args) {
-    HandleScope scope;
+  // Request Baton
+  SPIBaton* baton = new SPIBaton();
+  baton->error_code = 0;
+  baton->callback = Persistent<Function>::New(callback);
 
-    const std::string device = args.Length() > 0 ?
-      std::String(*(args[0]->toString())) : std::string("/dev/spidev0.0");
-    uint8_t bits = args.Length() > 1 ? (uint8_t)(args[0]->Uint32Value()) : 8;
-    uint32_t speed = args.Length() > 2 ? args[0]->Uint32Value() : 1000000;
+  // Transfer Payload
+  baton->payload = new SPITransfer();
+  baton->payload->data = Buffer::Data(data);
+  baton->payload->length = Buffer::Length(data);
 
-    Handle<SPIDevice> _handle = new SPIDevice(device, SPI_MODE_0, bits, speed);
-    args.This()->Set(String::NewSymbol("_handle"), _handle);
+  // UV Request
+  uv_work_t request = new uv_work_t();
+  request.data = baton;
+  uv_queue_work(uv_default_loop(), &request, SPIDevice::transfer, SPIInterface::Result);
+  return scope.Close(Undefined());
+}
 
-    return scope.Close(args.This());
-  }
+Handle<Value> SPIInterface::Close(const Arguments& args) {
+  HandleScope scope;
 
-  Persistent<Function> Constructor;
+  if (!args[0]->IsFunction()) return ThrowException(Exception::TypeError(
+    String::New("First argumernt must be a callback function")));
+  Local<Function> callback = Local<Function>::Cast(args[0]);
+
+  // Request Baton
+  SPIBaton* baton = new SPIBaton();
+  baton->error_code = 0;
+  baton->callback = Persistent<Function>::New(callback);
+  baton->payload = NULL;
+
+  uv_queue_work(uv_default_loop(), &request, SPIDevice::transfer, SPIInterface::Result);
+  return scope.Close(Undefined());
 }
 
 void Init(Handle<Object> target) {
   HandleScope scope;
 
-  Local<FunctionTemplate> device = FunctionTemplate::New(SPIInterface::New)
-  device->SetClassName(String::NewSymbol("SPIDevice"));
+  target->Set(String::NewSymbol("open"),
+    Persistent<Function>::New(SPIInterface::Open)->GetFunction());
+  target->Set(String::NewSymbol("transfer"),
+    Persistent<Function>::New(SPIInterface::Transfer)->GetFunction());
+  target->Set(String::NewSymbol("close"),
+    Persistent<Function>::New(SPIInterface::Close)->GetFunction());
 
-  SetPrototypeMethod(device, "open", SPIInterface::Open);
-  SetPrototypeMethod(device, "transfer", SPIInterface::Transfer);
-  SetPrototypeMethod(device, "close", SPIInterface::Close);
-
-  Constructor = Persistent<Function>::New(device->GetFunction());
-  target->Set(String::NewSymbol("SPIDevice"), Constructor);
+  scope.Close();
 }
 
-NODE_MODULE(SPIDevice, Init)
+NODE_MODULE(SPI, Init)

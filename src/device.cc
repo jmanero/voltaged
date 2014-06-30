@@ -2,7 +2,7 @@
  * Original code from
  * http://hertaville.com/2013/07/24/interfacing-an-spi-adc-mcp3008-chip-to-the-raspberry-pi-using-c/
  */
-#include "device.h"
+#include "spi.h"
 
 /**********************************************************
  * open() :function is called by the constructor.
@@ -12,33 +12,51 @@
  * They must be set appropriately by constructor before calling
  * this function.
  * *********************************************************/
-void SPIDevice::open() {
-  this->spifd = ::open(this->device.c_str(), O_RDWR);
-  if (this->spifd < 0) throw SPIException(this->spifd, "Unable to open SPI device");
+void SPIDevice::open(uv_work_t* req) {
+  SPIBaton* baton = static_cast<SPIBaton*>(req->data);
+  SPISetup* setup = static_cast<SPIBaton*>(baton->payload);
 
-  this->control(SPI_IOC_WR_MODE, &(this->mode), "Could not set SPI Write Mode");
-  this->control(SPI_IOC_RD_MODE, &(this->mode), "Could not set SPI Read Mode");
-  this->control(SPI_IOC_WR_BITS_PER_WORD, &(this->bits_per_word), "Could not set SPI Write Bits-per-Word");
-  this->control(SPI_IOC_RD_BITS_PER_WORD, &(this->bits_per_word), "Could not set SPI Read Bits-per-Word");
-  this->control(SPI_IOC_WR_MAX_SPEED_HZ, &(this->speed), "Could not set SPI Write Speed");
-  this->control(SPI_IOC_RD_MAX_SPEED_HZ, &(this->speed), "Could not set SPI Read Speed");
+  if (baton->fd = ::open(setup->device.c_str(), O_RDWR) < 0) {
+    baton->error_code = errno;
+    baton->error_message = "Unable to open SPI device";
+    return;
+  }
+
+  if(control(baton, SPI_IOC_WR_MODE, &(setup->mode), "Could not set SPI Write Mode")) return;
+  if(control(baton, SPI_IOC_RD_MODE, &(setup->mode), "Could not set SPI Read Mode")) return;
+  if(control(baton, SPI_IOC_WR_BITS_PER_WORD, &(setup->word), "Could not set SPI Write Bits-per-Word")) return;
+  if(control(baton, SPI_IOC_RD_BITS_PER_WORD, &(setup->word), "Could not set SPI Read Bits-per-Word")) return;
+  if(control(baton, SPI_IOC_WR_MAX_SPEED_HZ, &(setup->speed), "Could not set SPI Write Speed")) return;
+  if(control(baton, SPI_IOC_RD_MAX_SPEED_HZ, &(setup->speed), "Could not set SPI Read Speed")) return;
+
+  // All done with the payload object
+  delete baton->setup;
+  baton->setup = NULL;
 }
 
 /***********************************************************
  * control(): Wrap ioctl calls on the SPI file handle
  ***********************************************************/
-void SPIDevice::control(uint64_t request, void *argp, const string &message) {
-  if(ioctl(this->spifd, request, argp) < 0)
-    throw SPIException(errno, message);
+bool SPIDevice::control(SPIBaton* baton, uint64_t request, void* argp, const string &message) {
+  if(ioctl(baton->fd, request, argp) < 0) {
+    baton->error_code = errno;
+    baton->error_message = message;
+    return true;
+  }
+  return false;
 }
 
 /***********************************************************
  * close(): Responsible for closing the spidev interface.
  * Called in destructor
  * *********************************************************/
-void SPIDevice::close(){
-  if(::close(this->spifd) < 0)
-    throw SPIException(errno, "Unable to close SPI device");
+void SPIDevice::close(uv_work_t* req) {
+  SPIBaton* baton = static_cast<SPIBaton*>(req->data);
+
+  if(::close(baton->fd) < 0){
+    baton->error_code = errno;
+    baton->error_message = "Unable to open SPI device";
+  }
 }
 
 /********************************************************************
@@ -46,8 +64,12 @@ void SPIDevice::close(){
  * device. Data shifted in from the spidev device is saved back into
  * "data".
  * ******************************************************************/
-void SPIDevice::transfer( uint8_t *data, uint32_t length) {
-  struct spi_ioc_transfer transfer_[length];
+void SPIDevice::transfer(uv_work_t* req) {
+  SPIBaton* baton = static_cast<SPIBaton*>(req->data);
+  SPITransfer* transfer = static_cast<SPIBaton*>(baton->payload);
+
+  uint8_t* data = transfer->data;
+  struct spi_ioc_transfer transfer_[transfer->length];
 
   for (uint32_t i = 0; i < length; i++){
     transfer_[i].tx_buf = (uint64_t)(data + i); // transmit from "data"
@@ -59,33 +81,5 @@ void SPIDevice::transfer( uint8_t *data, uint32_t length) {
     transfer_[i].cs_change = 0;
   }
 
-  this->control(SPI_IOC_MESSAGE(length), &transfer_, "Unable to transmit/receive");
-}
-
-/*************************************************
- * Default constructor. Set member variables to
- * default values and then call open()
- * ***********************************************/
-SPIDevice::SPIDevice(): device() {
-  SPIDevice("/dev/spidev0.0", SPI_MODE_0, 8, 1000000);
-}
-
-/*************************************************
- * overloaded constructor. let user set member variables to
- * and then call open()
- * ***********************************************/
-SPIDevice::SPIDevice(const string &device_, uint8_t mode_,
-  uint8_t bits_per_word_, uint32_t speed_): device(device_) {
-  this->mode = mode_;
-  this->bits_per_word = bits_per_word_;
-  this->speed = speed_;
-  this->spifd = -1;
-}
-
-SPIException::SPIException(uint8_t code_, const string &message_): message(message_) {
-  this->code = code_;
-}
-
-const char* SPIException::what() const throw() {
-  return (this->message + " (" + to_string(this->code) + "): " + strerror(this->code)).c_str();
+  control(baton, SPI_IOC_MESSAGE(length), &transfer_, "Unable to transmit/receive");
 }

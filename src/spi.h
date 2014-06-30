@@ -24,8 +24,8 @@
  * to the spidevice and at the same time receives data of the same length.
  * Resulting data is stored in the "data" variable after the function call.
  * ****************************************************************************/
-#ifndef LIBSPI_H
-#define LIBSPI_H
+#ifndef SPI_H
+#define SPI_H
 
 #include <stdlib.h>
 #include <unistd.h>
@@ -34,44 +34,51 @@
 #include <string>
 #include <cstdint>
 #include <cstring>
+#include <errno.h>
 
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <linux/spi/spidev.h>
 
-#include <errno.h>
-#include <exception>
+#include <v8.h>
+#include <node.h>
 
 using namespace std;
+using namespace node;
+using namespace v8;
 
-class SPIDevice {
-public:
-  SPIDevice();
-  SPIDevice(const string &device_, uint8_t mode_, uint8_t bits_per_word_, uint32_t speed_);
-  ~SPIDevice() {};
+struct SPIBaton {
+  // uv_work_t request;
+  Persistent<Function> callback;
+  int32_t error_code;
+  string error_message;
 
-  void open();
-  void transfer( uint8_t *data, uint32_t length);
-  void close();
-private:
-  const string device;
-  unsigned char mode;
-  unsigned char bits_per_word;
-  unsigned int speed;
-  int spifd;
-
-  void control(uint64_t request, void *argp, const string &message);
+  uint32_t fd;
+  void* payload;
 };
 
-class SPIException: public exception {
-public:
-  SPIException(int32_t code_, const string &message_);
+struct SPITransfer {
+  uint32_t length;
+  uint8_t* data;
+}
 
-  virtual ~SPIException() throw() {};
-  const char* what() const throw();
-private:
-  int32_t code;
-  const string message;
+struct SPISetup {
+  string device;
+  uint8_t mode;
+  uint8_t word;
+  uint8_t speed;
+}
+
+namespace SPIDevice {
+  void open(uv_work_t* req);
+  void control(SPIBaton* baton, uint64_t request, void* argp, const string &message);
+  void close(uv_work_t* req);
+  void transfer(uv_work_t* req);
 };
+
+namespace SPIInterface {
+  Result(uv_work_t* req);
+
+}
 
 #endif
