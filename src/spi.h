@@ -43,6 +43,12 @@
 #include <v8.h>
 #include <node.h>
 
+// SPIInterface Operations
+#define SPI_INTERFACE_OPEN 1
+#define SPI_INTERFACE_TRANSFER 2
+#define SPI_INTERFACE_CLOSE 3
+#define SPI_INTERFACE_ERROR 255
+
 using namespace std;
 using namespace node;
 using namespace v8;
@@ -53,7 +59,8 @@ struct SPIBaton {
   int32_t error_code;
   string error_message;
 
-  uint32_t fd;
+  int32_t fd;
+  uint8_t operation;
   void* payload;
 };
 
@@ -71,13 +78,14 @@ struct SPISetup {
 
 namespace SPIDevice {
   void open(uv_work_t* req);
-  void control(SPIBaton* baton, uint64_t request, void* argp, const string &message);
+  bool control(SPIBaton* baton, uint64_t request, void* argp, const string &message);
   void close(uv_work_t* req);
   void transfer(uv_work_t* req);
 };
 
 namespace SPIInterface {
-  Result(uv_work_t* req);
+  void Request(uint32_t fd, uint8_t operation, void* payload, Persistent<Function> callback);
+  void Result(uv_work_t* req)
 
 }
 

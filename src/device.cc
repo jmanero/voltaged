@@ -22,16 +22,12 @@ void SPIDevice::open(uv_work_t* req) {
     return;
   }
 
-  if(control(baton, SPI_IOC_WR_MODE, &(setup->mode), "Could not set SPI Write Mode")) return;
-  if(control(baton, SPI_IOC_RD_MODE, &(setup->mode), "Could not set SPI Read Mode")) return;
-  if(control(baton, SPI_IOC_WR_BITS_PER_WORD, &(setup->word), "Could not set SPI Write Bits-per-Word")) return;
-  if(control(baton, SPI_IOC_RD_BITS_PER_WORD, &(setup->word), "Could not set SPI Read Bits-per-Word")) return;
-  if(control(baton, SPI_IOC_WR_MAX_SPEED_HZ, &(setup->speed), "Could not set SPI Write Speed")) return;
-  if(control(baton, SPI_IOC_RD_MAX_SPEED_HZ, &(setup->speed), "Could not set SPI Read Speed")) return;
-
-  // All done with the payload object
-  delete baton->setup;
-  baton->setup = NULL;
+  control(baton, SPI_IOC_WR_MODE, &(setup->mode), "Could not set SPI Write Mode");
+  control(baton, SPI_IOC_RD_MODE, &(setup->mode), "Could not set SPI Read Mode");
+  control(baton, SPI_IOC_WR_BITS_PER_WORD, &(setup->word), "Could not set SPI Write Bits-per-Word");
+  control(baton, SPI_IOC_RD_BITS_PER_WORD, &(setup->word), "Could not set SPI Read Bits-per-Word");
+  control(baton, SPI_IOC_WR_MAX_SPEED_HZ, &(setup->speed), "Could not set SPI Write Speed");
+  control(baton, SPI_IOC_RD_MAX_SPEED_HZ, &(setup->speed), "Could not set SPI Read Speed");
 }
 
 /***********************************************************
@@ -41,9 +37,9 @@ bool SPIDevice::control(SPIBaton* baton, uint64_t request, void* argp, const str
   if(ioctl(baton->fd, request, argp) < 0) {
     baton->error_code = errno;
     baton->error_message = message;
-    return true;
+    return false;
   }
-  return false;
+  return true;
 }
 
 /***********************************************************
@@ -57,6 +53,8 @@ void SPIDevice::close(uv_work_t* req) {
     baton->error_code = errno;
     baton->error_message = "Unable to open SPI device";
   }
+
+  baton->fd = 0;
 }
 
 /********************************************************************
