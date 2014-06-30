@@ -28,13 +28,13 @@
 #define SPI_H
 
 #include <stdlib.h>
-#include <unistd.h>
 #include <stdio.h>
+#include <unistd.h>
+#include <errno.h>
 #include <iostream>
 #include <string>
 #include <cstdint>
 #include <cstring>
-#include <errno.h>
 
 #include <fcntl.h>
 #include <sys/ioctl.h>
@@ -42,6 +42,7 @@
 
 #include <v8.h>
 #include <node.h>
+#include <node_buffer.h>
 
 // SPIInterface Operations
 #define SPI_INTERFACE_OPEN 1
@@ -61,20 +62,15 @@ struct SPIBaton {
 
   int32_t fd;
   uint8_t operation;
-  void* payload;
-};
 
-struct SPITransfer {
-  uint32_t length;
-  uint8_t* data;
-}
-
-struct SPISetup {
   string device;
   uint8_t mode;
   uint8_t word;
   uint8_t speed;
-}
+
+  Buffer* send;
+  Buffer* receive;
+};
 
 namespace SPIDevice {
   void open(uv_work_t* req);
@@ -85,8 +81,10 @@ namespace SPIDevice {
 
 namespace SPIInterface {
   void Request(uint32_t fd, uint8_t operation, void* payload, Persistent<Function> callback);
-  void Result(uv_work_t* req)
-
+  void Result(uv_work_t* req);
+  Handle<Value> Open(const Arguments& args);
+  Handle<Value> Transfer(const Arguments& args);
+  Handle<Value> Close(const Arguments& args);
 }
 
 #endif
