@@ -1,0 +1,11 @@
+{
+  "name": "voltaged",
+  "version": "0.0.1",
+  "description": "RaspperryPi service to read voltages from an ADC",
+  "scripts": {
+    "install": "node-gyp rebuild"
+  },
+  "author": "John Manero <john.manero@gmail.com>",
+  "license": "MIT",
+  "gypfile": true
+}
