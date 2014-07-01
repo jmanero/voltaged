@@ -44,10 +44,8 @@ void SPIDevice::close(uv_work_t* req) {
  * baton with received data.
  */
 void SPIDevice::transfer(uv_work_t* req) {
-  cout << "Starting transfer" << endl;
   SPIBaton* baton = static_cast<SPIBaton*>(req->data);
 
-  cout << " -> Sending " << to_string(baton->length) << " bytes" << endl;
   struct spi_ioc_transfer transfer_[baton->length];
   for (uint32_t i = 0; i < baton->length; i++){
     transfer_[i].tx_buf = (uint64_t)(baton->send + i);
@@ -61,7 +59,6 @@ void SPIDevice::transfer(uv_work_t* req) {
   }
 
   control(baton, SPI_IOC_MESSAGE(baton->length), &transfer_, "Unable to transmit/receive");
-  cout << "Completed transfer" << endl;
 }
 
 /**

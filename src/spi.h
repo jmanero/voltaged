@@ -74,9 +74,9 @@ struct SPIBaton {
 
 namespace SPIDevice {
   void open(uv_work_t* req);
-  bool control(SPIBaton* baton, uint64_t request, void* argp, const string &message);
   void close(uv_work_t* req);
   void transfer(uv_work_t* req);
+  bool control(SPIBaton* baton, uint64_t request, void* argp, const string &message);
 };
 
 namespace SPIInterface {
