@@ -50,26 +50,26 @@
 #define SPI_INTERFACE_CLOSE 3
 #define SPI_INTERFACE_ERROR 255
 
-using namespace std;
-using namespace node;
 using namespace v8;
+using namespace std;
 
 struct SPIBaton {
   // uv_work_t request;
   Persistent<Function> callback;
   int32_t error_code;
-  string error_message;
+  std::string error_message;
 
   int32_t fd;
   uint8_t operation;
 
-  string device;
+  char* device;
   uint8_t mode;
   uint8_t word;
-  uint8_t speed;
+  uint32_t speed;
 
-  Buffer* send;
-  Buffer* receive;
+  size_t length;
+  uint8_t* send;
+  uint8_t* receive;
 };
 
 namespace SPIDevice {
@@ -80,7 +80,9 @@ namespace SPIDevice {
 };
 
 namespace SPIInterface {
-  void Request(uint32_t fd, uint8_t operation, void* payload, Persistent<Function> callback);
+  using namespace node;
+
+  uv_work_t* Request(Local<Value> fd, uint8_t operation, Local<Value> callback);
   void Result(uv_work_t* req);
   Handle<Value> Open(const Arguments& args);
   Handle<Value> Transfer(const Arguments& args);

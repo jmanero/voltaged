@@ -10,7 +10,8 @@
 void SPIDevice::open(uv_work_t* req) {
   SPIBaton* baton = static_cast<SPIBaton*>(req->data);
 
-  if (baton->fd = ::open(baton->device.c_str(), O_RDWR) < 0) {
+  if ((baton->fd = ::open(baton->device, O_RDWR)) < 0) {
+    baton->operation = SPI_INTERFACE_ERROR;
     baton->error_code = errno;
     baton->error_message = "Unable to open SPI device";
     return;
@@ -45,23 +46,19 @@ void SPIDevice::close(uv_work_t* req) {
 void SPIDevice::transfer(uv_work_t* req) {
   SPIBaton* baton = static_cast<SPIBaton*>(req->data);
 
-  size_t length = Buffer::Length(*(baton->send));
-  uint8_t* send = Buffer::Data(*(baton->send));
-  uint8_t* receive = Buffer::Data(*(baton->receive));
+  struct spi_ioc_transfer transfer_[baton->length];
+  for (uint32_t i = 0; i < baton->length; i++){
+    transfer_[i].tx_buf = (uint64_t)(baton->send + i);
+    transfer_[i].rx_buf = (uint64_t)(baton->receive + i);
 
-  struct spi_ioc_transfer transfer_[length];
-  for (uint32_t i = 0; i < length; i++){
-    transfer_[i].tx_buf = (uint64_t)(send + i);
-    transfer_[i].rx_buf = (uint64_t)(receive + i);
-
-    transfer_[i].len = length;
+    transfer_[i].len = baton->length;
     transfer_[i].speed_hz = baton->speed;
     transfer_[i].bits_per_word = baton->word;
     transfer_[i].delay_usecs = 0 ;
     transfer_[i].cs_change = 0;
   }
 
-  control(baton, SPI_IOC_MESSAGE(length), &transfer_, "Unable to transmit/receive");
+  control(baton, SPI_IOC_MESSAGE(baton->length), &transfer_, "Unable to transmit/receive");
 }
 
 /**
@@ -69,6 +66,7 @@ void SPIDevice::transfer(uv_work_t* req) {
  */
 bool SPIDevice::control(SPIBaton* baton, uint64_t request, void* argp, const string &message) {
   if(ioctl(baton->fd, request, argp) < 0) {
+    baton->operation = SPI_INTERFACE_ERROR;
     baton->error_code = errno;
     baton->error_message = message;
     return false;
