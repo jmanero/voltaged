@@ -82,7 +82,8 @@ namespace SPIDevice {
 namespace SPIInterface {
   using namespace node;
 
-  uv_work_t* Request(Local<Value> fd, uint8_t operation, Local<Value> callback);
+  uv_work_t* create_request(Local<Value> fd, uint8_t operation, Local<Value> callback);
+  Handle<Value> validate_request(Local<Value> fd, Local<Value> callback);
   void Result(uv_work_t* req);
   Handle<Value> Open(const Arguments& args);
   Handle<Value> Transfer(const Arguments& args);

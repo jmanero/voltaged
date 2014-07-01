@@ -1,77 +1,77 @@
 #include "spi.h"
 
-uv_work_t* SPIInterface::Request(Local<Value> fd, uint8_t operation,
-  Local<Value> callback) {
-  // Use the caller's HandleScope
-
-  if (!fd->IsInt32()) {
-    ThrowException(Exception::TypeError(
-      String::New("File-handle must be an integer")));
-    return NULL;
-  }
-
-  if (!callback->IsFunction()) {
-    ThrowException(Exception::TypeError(
-      String::New("callback must be a function")));
-    return NULL;
-  }
-
-  // Request Baton
-  SPIBaton* baton = new SPIBaton();
+/**
+ * Build a new uv_work_t with an SPIBaton
+ */
+uv_work_t* SPIInterface::create_request(Local<Value> fd, uint8_t operation, Local<Value> callback) {
+  SPIBaton* baton = new SPIBaton(); // Create Request Baton
   baton->error_code = 0;
   baton->operation = operation;
   baton->fd = fd->ToInt32()->Value();
   baton->callback = Persistent<Function>::New(Local<Function>::Cast(callback));
 
-  // UV Request
-  uv_work_t* request = new uv_work_t();
+  uv_work_t* request = new uv_work_t(); // Create UV Request
   request->data = baton;
 
   return request;
 }
 
+/**
+ * Validate `fd` and `callback` before trying to build a request
+ */
+Handle<Value> SPIInterface::validate_request(Local<Value> fd, Local<Value> callback) {
+  if (!fd->IsInt32()) return ThrowException(Exception::TypeError(
+    String::New("File-handle must be an integer")));
+
+  if (!callback->IsFunction()) return ThrowException(Exception::TypeError(
+    String::New("callback must be a function")));
+
+  return Undefined();
+}
+
+/**
+ * Handle callbacks from SPIDevice tasks
+ */
 void SPIInterface::Result(uv_work_t* req) {
   HandleScope scope;
   SPIBaton* baton = static_cast<SPIBaton*>(req->data);
 
-
-  Handle<Value> argv[2];
-  argv[0] = Undefined();
-  argv[1] = Undefined();
-
+  Handle<Value> argv[] = { Undefined(), Undefined() };
+  TryCatch try_catch;
   switch(baton->operation) {
     case SPI_INTERFACE_OPEN:
       argv[1] = Int32::New(baton->fd);
       delete baton->device; // FREE THE MALLOCS!!
       break;
+
     case SPI_INTERFACE_TRANSFER:
-      break;
     case SPI_INTERFACE_CLOSE:
       break;
+
     case SPI_INTERFACE_ERROR:
       argv[0] = Exception::Error(
         String::New(("SPIDevice Error: " + baton->error_message +
         " (" + to_string(baton->error_code) + "): " +
         strerror(baton->error_code)).c_str()));
       break;
+
     default:
       argv[0] = Exception::TypeError(
         String::New(("Unhandled SPIInterface operation " +
         to_string(baton->operation)).c_str()));
   }
-
-  TryCatch try_catch;
   baton->callback->Call(Context::GetCurrent()->Global(), 2, argv);
   if (try_catch.HasCaught()) FatalException(try_catch);
 
-  baton->callback.Dispose();
-
   // FREE THE MALLOCS!!
+  baton->callback.Dispose();
   delete baton;
   delete req;
 }
 
-
+/**
+ * Enqueue an open task
+ */
 Handle<Value> SPIInterface::Open(const Arguments& args) {
   HandleScope scope;
 
@@ -92,7 +92,9 @@ Handle<Value> SPIInterface::Open(const Arguments& args) {
     String::New("Speed must be a number")));
   uint32_t speed_ = args[3]->ToUint32()->Value();
 
-  uv_work_t* request = Request(Number::New(-1), SPI_INTERFACE_OPEN, args[4]);
+  Local<Number> fd = Int32::New(-1);
+  validate_request(fd, args[4]);
+  uv_work_t* request = create_request(fd, SPI_INTERFACE_OPEN, args[4]);
   SPIBaton* baton = (SPIBaton*)(request->data);
 
   // <sad-hack> Will be freed in Response.
@@ -109,6 +111,9 @@ Handle<Value> SPIInterface::Open(const Arguments& args) {
   return scope.Close(Undefined());
 }
 
+/**
+ * Enqueue a transfer task
+ */
 Handle<Value> SPIInterface::Transfer(const Arguments& args) {
   HandleScope scope;
 
@@ -129,7 +134,8 @@ Handle<Value> SPIInterface::Transfer(const Arguments& args) {
     String::New("Receive must be a Buffer")));
   Local<Object>receive_ = args[4]->ToObject();
 
-  uv_work_t* request = Request(args[0], SPI_INTERFACE_TRANSFER, args[5]);
+  validate_request(args[0], args[5]);
+  uv_work_t* request = create_request(args[0], SPI_INTERFACE_TRANSFER, args[5]);
   SPIBaton* baton = (SPIBaton*)(request->data);
   baton->word = word_;
   baton->speed = speed_;
@@ -144,17 +150,24 @@ Handle<Value> SPIInterface::Transfer(const Arguments& args) {
   return scope.Close(Undefined());
 }
 
+/**
+ * Enqueue a close task
+ */
 Handle<Value> SPIInterface::Close(const Arguments& args) {
   HandleScope scope;
 
+  validate_request(args[0], args[1]);
   uv_queue_work(uv_default_loop(),
-    Request(args[0], SPI_INTERFACE_CLOSE, args[1]),
+    create_request(args[0], SPI_INTERFACE_CLOSE, args[1]),
     SPIDevice::close, (uv_after_work_cb)(SPIInterface::Result));
   return scope.Close(Undefined());
 }
 
+/**
+ * Ye Old V8 Init handler
+ */
 void Init(Handle<Object> target) {
-  // HandleScope scope;
+  HandleScope scope;
 
   // Export Methods
   target->Set(String::NewSymbol("open"),
@@ -176,4 +189,7 @@ void Init(Handle<Object> target) {
   constants->Set(String::NewSymbol("SPI_CS_HIGH"), Integer::New(SPI_CS_HIGH));
 }
 
+/**
+ * Node JS Black Magic (tm)
+ */
 NODE_MODULE(SPIInterface, Init);

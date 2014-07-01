@@ -1,26 +1,36 @@
 var SPI = require("../lib/spi");
 
-var ch0 = new SPI();
-ch0.open("/dev/spidev0.0", function(err) {
+var channel = new SPI("/dev/spidev0.0", {
+  speed: 5000
+});
+
+channel.open(function(err) {
   if (err) return console.log(err);
-  console.log("Open. Handle " + ch0._handle);
+  console.log("Open. Handle " + this._handle);
 
-  var send = "Hello THere! I'm a long string of characters. ;lsdkfj;aasdfasdfd";
-  console.log("Sending " + send.length + " bytes");
+  var i = 0;
+  (function context_loop() {
+    var b = new Buffer(16);
+    b.fill(i + "");
 
-  ch0.transfer(Buffer(send, "ascii"), function(err, res) {
-    if (err) return console.log(err);
-    console.log("Received " + res.toString("utf8"));
-
-    ch0.close(function(err) {
+    channel.transfer(b, function(err, res) {
       if (err) return console.log(err);
-      console.log("Closed");
+      console.log(res);
     });
 
-    console.log("Or close!");
-  });
+    i++;
+    if(i < 4) context_loop();
+  })();
   console.log("Sweet! Neither did transfer");
 
 });
+
+// Close after a while...
+setTimeout(function() {
+  channel.close(function(err) {
+    console.log("Closed");
+    if (err) return console.log(err);
+  });
+}, 10000);
 
 console.log("Hey, look! The open call didn't block!");
